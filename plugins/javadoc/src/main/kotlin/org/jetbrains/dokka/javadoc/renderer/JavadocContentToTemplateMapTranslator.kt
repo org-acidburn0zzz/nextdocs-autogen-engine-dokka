@@ -11,6 +11,7 @@ import org.jetbrains.dokka.model.ImplementedInterfaces
 import org.jetbrains.dokka.model.InheritedFunction
 import org.jetbrains.dokka.pages.*
 import org.jetbrains.dokka.plugability.DokkaContext
+import org.jetbrains.dokka.utilities.formatToEndWithHtml
 import java.nio.file.Paths
 
 internal class JavadocContentToTemplateMapTranslator(
@@ -38,7 +39,7 @@ internal class JavadocContentToTemplateMapTranslator(
         }
 
     private fun pathToRoot(node: JavadocPageNode): String {
-        return when(node){
+        return when (node) {
             is JavadocModulePageNode -> ""
             else -> run {
                 val link = locationProvider.resolve(node, skipExtension = true)
@@ -159,6 +160,10 @@ internal class JavadocContentToTemplateMapTranslator(
             return mapOf(
                 "modifiers" to node.signature.modifiers?.let { htmlForContentNode(it, contextNode) },
                 "signature" to node.name,
+                "address" to locationProvider.resolve(
+                    contextNode.children.first { (it as? JavadocClasslikePageNode)?.dri?.first() == node.dri.first() },
+                    contextNode
+                ).formatToEndWithHtml(),
                 "description" to htmlForContentNodes(node.description, node)
             )
         }

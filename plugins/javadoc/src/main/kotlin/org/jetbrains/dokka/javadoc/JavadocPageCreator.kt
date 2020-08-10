@@ -38,8 +38,9 @@ open class JavadocPageCreator(
 
     fun pageForClasslike(c: DClasslike): JavadocClasslikePageNode? =
         c.highestJvmSourceSet?.let { jvm ->
+            var children = c.classlikes.mapNotNull { pageForClasslike(it) }
             JavadocClasslikePageNode(
-                name = c.name.orEmpty(),
+                name = c.dri.classNames.orEmpty(),
                 content = contentForClasslike(c),
                 dri = setOf(c.dri),
                 signature = signatureForNode(c, jvm),
@@ -55,7 +56,7 @@ open class JavadocPageCreator(
                         PropertyContainer.withAll(it.indexesInDocumentation())
                     )
                 }.orEmpty(),
-                classlikes = c.classlikes.mapNotNull { pageForClasslike(it) },
+                classlikes = children,
                 properties = c.properties.map {
                     JavadocPropertyNode(
                         it.dri,
@@ -66,6 +67,7 @@ open class JavadocPageCreator(
                     )
                 },
                 documentable = c,
+                children = children,
                 extra = ((c as? WithExtraProperties<Documentable>)?.extra ?: PropertyContainer.empty()) + c.indexesInDocumentation()
             )
         }
