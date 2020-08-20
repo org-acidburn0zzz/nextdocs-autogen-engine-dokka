@@ -83,11 +83,18 @@ open class DefaultPageCreator(
             }
         }
         +contentForComments(m)
+
         block("Packages", 2, ContentKind.Packages, m.packages, m.sourceSets.toSet()) {
+            val documentations = it.sourceSets.map { platform ->
+                it.descriptions[platform]?.also { it.root }
+            }
+            val haveSameContent = documentations.all { it?.root == documentations.firstOrNull()?.root && it?.root != null }
+
             link(it.name, it.dri)
+            if(it.sourceSets.size == 1 || (documentations.isNotEmpty() && haveSameContent)){
+                documentations.first()?.let { firstSentenceComment(kind = ContentKind.Comment, content = it) }
+            }
         }
-//        text("Index\n") TODO
-//        text("Link to allpage here")
     }
 
     protected open fun contentForPackage(p: DPackage) = contentBuilder.contentFor(p) {
@@ -261,18 +268,13 @@ open class DefaultPageCreator(
     protected open fun contentForDescription(
         d: Documentable
     ): List<ContentNode> {
-        val tags: GroupedTags = d.documentation.flatMap { (pd, doc) ->
-            doc.children.asSequence().map { pd to it }.toList()
-        }.groupBy { it.second::class }
-
         val platforms = d.sourceSets.toSet()
 
         return contentBuilder.contentFor(d, styles = setOf(TextStyle.Block)) {
-            val description = tags.withTypeUnnamed<Description>()
-            if (description.any { it.value.root.children.isNotEmpty() }) {
+            if (d.descriptions.any { it.value.root.children.isNotEmpty() }) {
                 platforms.forEach { platform ->
-                    description[platform]?.also {
-                        group(sourceSets = setOf(platform)) {
+                    d.descriptions[platform]?.also {
+                        group(sourceSets = setOf(platform), styles = emptySet()) {
                             comment(it.root)
                         }
                     }
@@ -280,13 +282,13 @@ open class DefaultPageCreator(
             }
 
             val unnamedTags: List<SourceSetDependent<TagWrapper>> =
-                tags.filterNot { (k, _) -> k.isSubclassOf(NamedTagWrapper::class) || k in specialTags }
+                d.groupedTags.filterNot { (k, _) -> k.isSubclassOf(NamedTagWrapper::class) || k in specialTags }
                     .map { (_, v) -> v.mapNotNull { (k, v) -> k?.let { it to v } }.toMap() }
             if (unnamedTags.isNotEmpty()) {
                 platforms.forEach { platform ->
                     unnamedTags.forEach { pdTag ->
                         pdTag[platform]?.also { tag ->
-                            group(sourceSets = setOf(platform)) {
+                            group(sourceSets = setOf(platform), styles = emptySet()) {
                                 header(4, tag.toHeaderString())
                                 comment(tag.root)
                             }
@@ -308,22 +310,18 @@ open class DefaultPageCreator(
     protected open fun contentForComments(
         d: Documentable
     ): List<ContentNode> {
-        val tags: GroupedTags = d.documentation.flatMap { (pd, doc) ->
-            doc.children.asSequence().map { pd to it }.toList()
-        }.groupBy { it.second::class }
-
         val platforms = d.sourceSets
 
         fun DocumentableContentBuilder.contentForParams() {
-            if (tags.isNotEmptyForTag<Param>()) {
+            if (d.groupedTags.isNotEmptyForTag<Param>()) {
                 header(2, "Parameters", kind = ContentKind.Parameters)
                 group(
                     extra = mainExtra + SimpleAttr.header("Parameters"),
                     styles = setOf(ContentStyle.WithExtraAttributes)
                 ) {
                     sourceSetDependentHint(sourceSets = platforms.toSet(), kind = ContentKind.SourceSetDependentHint) {
-                        val receiver = tags.withTypeUnnamed<Receiver>()
-                        val params = tags.withTypeNamed<Param>()
+                        val receiver = d.groupedTags.withTypeUnnamed<Receiver>()
+                        val params = d.groupedTags.withTypeNamed<Param>()
                         table(kind = ContentKind.Parameters) {
                             platforms.flatMap { platform ->
                                 val possibleFallbacks = d.getPossibleFallbackSourcesets(platform)
@@ -356,14 +354,14 @@ open class DefaultPageCreator(
         }
 
         fun DocumentableContentBuilder.contentForSeeAlso() {
-            if (tags.isNotEmptyForTag<See>()) {
+            if (d.groupedTags.isNotEmptyForTag<See>()) {
                 header(2, "See also", kind = ContentKind.Comment)
                 group(
                     extra = mainExtra + SimpleAttr.header("See also"),
                     styles = setOf(ContentStyle.WithExtraAttributes)
                 ) {
                     sourceSetDependentHint(sourceSets = platforms.toSet(), kind = ContentKind.SourceSetDependentHint) {
-                        val seeAlsoTags = tags.withTypeNamed<See>()
+                        val seeAlsoTags = d.groupedTags.withTypeNamed<See>()
                         table(kind = ContentKind.Sample) {
                             platforms.flatMap { platform ->
                                 val possibleFallbacks = d.getPossibleFallbackSourcesets(platform)
@@ -392,7 +390,7 @@ open class DefaultPageCreator(
         }
 
         fun DocumentableContentBuilder.contentForSamples() {
-            val samples = tags.withTypeNamed<Sample>()
+            val samples = d.groupedTags.withTypeNamed<Sample>()
             if (samples.isNotEmpty()) {
                 header(2, "Samples", kind = ContentKind.Sample)
                 group(
@@ -418,7 +416,7 @@ open class DefaultPageCreator(
         }
 
         return contentBuilder.contentFor(d) {
-            if (tags.isNotEmpty()) {
+            if (d.groupedTags.isNotEmpty()) {
                 contentForSamples()
                 contentForSeeAlso()
                 contentForParams()
@@ -522,4 +520,12 @@ open class DefaultPageCreator(
 
     private val List<Documentable>.sourceSets: Set<DokkaSourceSet>
         get() = flatMap { it.sourceSets }.toSet()
+
+    private val Documentable.groupedTags: GroupedTags
+        get() = documentation.flatMap { (pd, doc) ->
+            doc.children.asSequence().map { pd to it }.toList()
+        }.groupBy { it.second::class }
+
+    private val Documentable.descriptions: SourceSetDependent<Description>
+        get() = groupedTags.withTypeUnnamed<Description>()
 }
